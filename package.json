@@ -1,0 +1,31 @@
+{
+  "name": "github-wrapped-automated",
+  "version": "1.0.0",
+  "description": "Automated GitHub Wrapped - Self-service analytics generator",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "keywords": ["github", "analytics", "wrapped", "ai"],
+  "author": "Dan-Co",
+  "license": "MIT",
+  "dependencies": {
+    "next": "^15.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@octokit/rest": "^21.0.2",
+    "next-auth": "^4.24.11",
+    "openai": "^4.77.0",
+    "swr": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "typescript": "^5.7.3",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^15.1.8"
+  }
+}
