@@ -598,6 +598,12 @@ export default function WrappedPage() {
         </div>
         <div className={styles.navTabs}>
           <button
+            className={styles.navTab}
+            onClick={() => router.push('/')}
+          >
+            Home
+          </button>
+          <button
             className={`${styles.navTab} ${activeTab === 'overview' ? styles.active : ''}`}
             onClick={() => setActiveTab('overview')}
           >

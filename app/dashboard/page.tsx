@@ -630,7 +630,16 @@ export default function Dashboard() {
 
       <div className={styles.container}>
         <header className={styles.header}>
-          <h1>Select Repositories</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button 
+              onClick={() => router.push('/')}
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.9rem' }}
+            >
+              Home
+            </button>
+            <h1>Select Repositories</h1>
+          </div>
           <div className={styles.headerActions}>
             {hasWrappedData && (
               <button 
@@ -675,7 +684,13 @@ export default function Dashboard() {
         {showModeSelector && (
           <div className={`glass-card ${styles.modeSelector}`}>
             <h3>How did you build this year?</h3>
-            <p className={styles.modeSelectorSubtext}>This helps us accurately represent your development style.</p>
+            <p className={styles.modeSelectorSubtext}>
+              Select your primary development style to help us analyze your work accurately.
+              <br />
+              <span style={{ fontSize: '0.9em', opacity: 0.8, display: 'block', marginTop: '8px' }}>
+                This sets a default for all repositories, but you can easily <strong>override this setting per-repository</strong> below.
+              </span>
+            </p>
             <div className={styles.modeButtons}>
               <button
                 className={`${styles.modeBtn} ${developmentMode === 'ai' ? styles.active : ''}`}

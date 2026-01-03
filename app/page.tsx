@@ -53,7 +53,7 @@ export default function HomePage() {
               </div>
               <div className={styles.statDivider}></div>
               <div className={styles.statItem}>
-                <span className={styles.statValue}>GPT-4o</span>
+                <span className={styles.statValue}>AI</span>
                 <span className={styles.statLabel}>Powered Analysis</span>
               </div>
               <div className={styles.statDivider}></div>
