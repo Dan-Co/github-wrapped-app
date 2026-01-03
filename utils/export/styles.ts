@@ -107,25 +107,32 @@ export function getExportStyles(): string {
     .nav-tabs {
       display: flex;
       gap: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px;
+      border-radius: 100px;
+      border: 1px solid var(--border);
     }
     
     .nav-tab {
-      padding: 10px 24px;
-      border: 1px solid var(--border);
+      padding: 8px 24px;
       border-radius: 100px;
-      background: var(--glass);
+      background: transparent;
       color: var(--text-dim);
       font-family: var(--font-mono);
       font-size: 0.8rem;
       cursor: pointer;
       transition: all 0.3s ease;
+      border: none;
     }
     
-    .nav-tab:hover,
+    .nav-tab:hover {
+      color: var(--text-main);
+    }
+    
     .nav-tab.active {
       background: rgba(255, 255, 255, 0.1);
       color: var(--text-main);
-      border-color: var(--prism-4);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     }
     
     .mode-indicator {
@@ -390,13 +397,27 @@ export function getExportStyles(): string {
     /* Repository Cards - matches app */
     .repos-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-      gap: 24px;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
     }
     
     .repo-card {
+      position: relative;
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
       cursor: pointer;
-      transition: all 0.3s ease;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+    }
+    
+    .repo-card:hover {
+      transform: translateY(-4px);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     }
     
     .repo-card:hover {
