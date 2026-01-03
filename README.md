@@ -8,6 +8,18 @@ An AI-powered, self-service GitHub analytics generator that creates beautiful "W
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-green)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="./public/Screenshot1.jpg" alt="GitHub Wrapped Dashboard" width="80%" />
+</p>
+
+<p align="center">
+  <img src="./public/Screenshot2.jpg" alt="Wrapped Overview" width="32%" />
+  <img src="./public/Screenshot3.jpg" alt="Impact Analysis" width="32%" />
+  <img src="./public/Screenshot4.jpg" alt="Repository Details" width="32%" />
+</p>
+
 ## ✨ Features
 
 ### 🔐 Authentication & Security
