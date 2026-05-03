@@ -21,6 +21,8 @@ type RepoCodeFrequencyResult = {
   message?: string
 }
 
+type LocSource = 'contributors' | 'code_frequency' | 'languages_estimate' | 'none'
+
 // Helper to fetch contributor stats with polling for 202 responses
 // GitHub returns 202 while computing stats - we need to poll until we get actual data
 async function fetchContributorStatsWithRetry(
@@ -264,6 +266,9 @@ export async function POST(request: NextRequest) {
     let locDeletions = contributorStats.status === 'ready' ? contributorStats.deletions : 0
     let locAttempts = contributorStats.attempts
     let locMessage = contributorStats.message || null
+    let locSource: LocSource = contributorStats.status === 'ready' ? 'contributors' : 'none'
+    let locEstimated = false
+    let locEstimatedBytesPerLine: number | null = null
 
     if (contributorStats.status !== 'ready') {
       const codeFrequencyStats = await fetchRepoCodeFrequencyWithRetry(octokit, owner, repo)
@@ -272,6 +277,7 @@ export async function POST(request: NextRequest) {
         locAdditions = codeFrequencyStats.additions
         locDeletions = codeFrequencyStats.deletions
         locAttempts = contributorStats.attempts + codeFrequencyStats.attempts
+        locSource = 'code_frequency'
         locMessage = 'Using repository-level code frequency fallback because contributor stats were not ready.'
       } else {
         locAttempts = contributorStats.attempts + codeFrequencyStats.attempts
@@ -279,6 +285,19 @@ export async function POST(request: NextRequest) {
           locMessage = `${locMessage} Fallback also failed: ${codeFrequencyStats.message}`
         } else if (codeFrequencyStats.message) {
           locMessage = codeFrequencyStats.message
+        }
+
+        const totalLanguageBytes = Object.values(languages.data || {}).reduce((sum, value) => sum + (value || 0), 0)
+        if (totalLanguageBytes > 0) {
+          const bytesPerLineEstimate = 40
+          const estimatedLines = Math.round(totalLanguageBytes / bytesPerLineEstimate)
+          locComputation = 'ready'
+          locAdditions = estimatedLines
+          locDeletions = 0
+          locSource = 'languages_estimate'
+          locEstimated = true
+          locEstimatedBytesPerLine = bytesPerLineEstimate
+          locMessage = `${locMessage ? `${locMessage} ` : ''}Using estimated LOC from language bytes while GitHub LOC stats are still computing.`
         }
       }
     }
@@ -356,6 +375,9 @@ export async function POST(request: NextRequest) {
       locComputation,
       locAttempts,
       locMessage,
+      locSource,
+      locEstimated,
+      locEstimatedBytesPerLine,
       languages: languages.data,
       readme: readmeContent,
       commitMessages: commits.slice(0, 20).map(c => c.commit.message),

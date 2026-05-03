@@ -26,6 +26,9 @@ export interface RepositoryStats {
   locComputation?: 'ready' | 'pending' | 'unavailable' | 'error'
   locAttempts?: number
   locMessage?: string | null
+  locSource?: 'contributors' | 'code_frequency' | 'languages_estimate' | 'none'
+  locEstimated?: boolean
+  locEstimatedBytesPerLine?: number | null
   languages: Record<string, number>
   readme: string | null
   commitMessages: string[]

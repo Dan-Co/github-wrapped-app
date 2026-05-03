@@ -466,7 +466,7 @@ export default function WrappedPage() {
       if (repo.stats) {
         acc.totalCommits += repo.stats.commits || 0
 
-        // Only include LOC when GitHub contributor stats are fully ready.
+        // Include LOC only when stats are marked ready (GitHub or explicit fallback source).
         if (repo.stats.locComputation === 'ready') {
           acc.totalAdditions += repo.stats.additions || 0
           acc.totalDeletions += repo.stats.deletions || 0
@@ -510,6 +510,17 @@ export default function WrappedPage() {
       error,
       unknown,
       coverage: total > 0 ? Math.round((ready / total) * 100) : 0,
+    }
+  }, [repositories])
+
+  const locSourceSummary = useMemo(() => {
+    const reposWithReadyLoc = repositories.filter(repo => repo.stats?.locComputation === 'ready')
+
+    return {
+      ready: reposWithReadyLoc.length,
+      contributors: reposWithReadyLoc.filter(repo => repo.stats?.locSource === 'contributors').length,
+      codeFrequency: reposWithReadyLoc.filter(repo => repo.stats?.locSource === 'code_frequency').length,
+      estimated: reposWithReadyLoc.filter(repo => repo.stats?.locSource === 'languages_estimate').length,
     }
   }, [repositories])
 
@@ -880,7 +891,9 @@ export default function WrappedPage() {
               <div className={styles.heroSignalRow}>
                 <span>{repositories.length} repos scanned</span>
                 <span>{primaryLanguage} dominant language</span>
-                <span>{locQuality.coverage}% LOC confidence</span>
+                <span>
+                  {locSourceSummary.estimated > 0 ? `${locSourceSummary.estimated} estimated LOC` : `${locQuality.coverage}% LOC confidence`}
+                </span>
               </div>
             </section>
 
@@ -899,7 +912,11 @@ export default function WrappedPage() {
                 <div className={`${styles.bigNumber} ${styles.mega}`}>
                   <AnimatedNumber value={stats.totalNet} />
                 </div>
-                <div className={styles.heroTitle}>net lines from repos with ready GitHub stats</div>
+                <div className={styles.heroTitle}>
+                  {locSourceSummary.estimated > 0
+                    ? 'net lines with temporary language-bytes LOC estimate fallback'
+                    : 'net lines from ready GitHub LOC stats'}
+                </div>
               </div>
             </div>
 
@@ -936,7 +953,7 @@ export default function WrappedPage() {
                 <div className={styles.label}>Data Confidence</div>
                 <h2>{locQuality.coverage}% LOC coverage</h2>
                 <p>
-                  {locQuality.ready} of {locQuality.total} repositories have ready LOC stats. Pending or unavailable repos are excluded from LOC totals instead of being counted as zero.
+                  {locQuality.ready} of {locQuality.total} repositories have ready LOC stats. Estimated fallback is active for {locSourceSummary.estimated} repositories while GitHub stats are computing.
                 </p>
               </div>
               <div className={styles.confidenceMeter} aria-label={`${locQuality.coverage}% LOC coverage`}>
@@ -946,6 +963,9 @@ export default function WrappedPage() {
               </div>
               <div className={styles.signalChips}>
                 <span className={styles.readyChip}>{locQuality.ready} ready</span>
+                {locSourceSummary.contributors > 0 && <span className={styles.readyChip}>{locSourceSummary.contributors} contributor</span>}
+                {locSourceSummary.codeFrequency > 0 && <span className={styles.readyChip}>{locSourceSummary.codeFrequency} code-frequency</span>}
+                {locSourceSummary.estimated > 0 && <span className={styles.mutedChip}>{locSourceSummary.estimated} estimated</span>}
                 {locQuality.pending > 0 && <span className={styles.pendingChip}>{locQuality.pending} pending</span>}
                 {locQuality.unavailable > 0 && <span className={styles.mutedChip}>{locQuality.unavailable} unavailable</span>}
                 {locQuality.error > 0 && <span className={styles.errorChip}>{locQuality.error} error</span>}
