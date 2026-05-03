@@ -43,11 +43,22 @@
 }
 
 .instructions {
-  background: rgba(0, 184, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(0, 184, 255, 0.14), rgba(0, 255, 249, 0.06));
   border: 1px solid rgba(0, 184, 255, 0.3);
   border-radius: 12px;
   padding: 20px;
   margin-bottom: 24px;
+}
+
+.instructions::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  transform: translateX(-100%);
+  animation: scannerSweep 5s ease-in-out infinite;
 }
 
 .filterBar {
@@ -134,6 +145,7 @@
 
 .repoCard {
   position: relative;
+  overflow: hidden;
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: pointer;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
@@ -143,11 +155,26 @@
   backdrop-filter: blur(10px);
 }
 
+.repoCard::after {
+  content: '';
+  position: absolute;
+  inset: auto 18px 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,255,249,0.72), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
 .repoCard:hover {
-  transform: translateY(-4px);
+  transform: translateY(-6px) scale(1.01);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
   border-color: rgba(255, 255, 255, 0.15);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.repoCard:hover::after,
+.repoCard.selected::after {
+  opacity: 1;
 }
 
 .repoCard.selected {
@@ -235,6 +262,15 @@
   gap: 12px;
   font-family: var(--font-mono);
   font-size: 0.9rem;
+  overflow: hidden;
+}
+
+.analyzing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 20%, rgba(0,255,249,0.12), transparent 80%);
+  animation: scannerSweep 1.3s linear infinite;
 }
 
 .footer {
@@ -247,6 +283,8 @@
   border-radius: 16px;
   position: sticky;
   bottom: 20px;
+  backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.32);
 }
 
 .selectionInfo {
@@ -273,9 +311,21 @@
 
 .progressFill {
   height: 100%;
-  background: linear-gradient(90deg, var(--prism-4), var(--prism-5));
+  background: linear-gradient(90deg, var(--prism-4), var(--prism-5), #00ff88);
+  background-size: 200% 100%;
   border-radius: 4px;
   transition: width 0.3s ease;
+  animation: progressAurora 1.8s linear infinite;
+}
+
+@keyframes scannerSweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); }
+}
+
+@keyframes progressAurora {
+  from { background-position: 0% 50%; }
+  to { background-position: 200% 50%; }
 }
 
 .progressText {

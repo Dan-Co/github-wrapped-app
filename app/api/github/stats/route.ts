@@ -13,6 +13,14 @@ type ContributorStatsResult = {
   message?: string
 }
 
+type RepoCodeFrequencyResult = {
+  additions: number
+  deletions: number
+  status: 'ready' | 'pending' | 'unavailable' | 'error'
+  attempts: number
+  message?: string
+}
+
 // Helper to fetch contributor stats with polling for 202 responses
 // GitHub returns 202 while computing stats - we need to poll until we get actual data
 async function fetchContributorStatsWithRetry(
@@ -123,6 +131,86 @@ async function fetchContributorStatsWithRetry(
   }
 }
 
+// Fallback LOC source: repository-level weekly additions/deletions.
+// This is not per-user, but provides stable LOC-style metrics when contributor stats are not ready.
+async function fetchRepoCodeFrequencyWithRetry(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  maxRetries = 3,
+  delayMs = 1000
+): Promise<RepoCodeFrequencyResult> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await octokit.repos.getCodeFrequencyStats({ owner, repo })
+
+      if (response.status === 202) {
+        if (attempt < maxRetries - 1) {
+          const backoffMs = delayMs * (attempt + 1)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
+        }
+
+        return {
+          additions: 0,
+          deletions: 0,
+          status: 'pending',
+          attempts: attempt + 1,
+          message: 'GitHub is still computing repository code frequency stats.',
+        }
+      }
+
+      if (!Array.isArray(response.data) || response.data.length === 0) {
+        return {
+          additions: 0,
+          deletions: 0,
+          status: 'unavailable',
+          attempts: attempt + 1,
+          message: 'GitHub returned no repository code frequency stats for this repository.',
+        }
+      }
+
+      let totalAdditions = 0
+      let totalDeletions = 0
+
+      for (const week of response.data) {
+        totalAdditions += week[1] || 0
+        // GitHub returns deletions as a negative value in code frequency stats.
+        totalDeletions += Math.abs(week[2] || 0)
+      }
+
+      return {
+        additions: totalAdditions,
+        deletions: totalDeletions,
+        status: 'ready',
+        attempts: attempt + 1,
+      }
+    } catch (error) {
+      if (attempt < maxRetries - 1) {
+        const backoffMs = delayMs * (attempt + 1)
+        await new Promise(resolve => setTimeout(resolve, backoffMs))
+        continue
+      }
+
+      return {
+        additions: 0,
+        deletions: 0,
+        status: 'error',
+        attempts: attempt + 1,
+        message: 'Failed to fetch repository code frequency stats after retries.',
+      }
+    }
+  }
+
+  return {
+    additions: 0,
+    deletions: 0,
+    status: 'error',
+    attempts: maxRetries,
+    message: 'Failed to fetch repository code frequency stats.',
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -171,10 +259,29 @@ export async function POST(request: NextRequest) {
 
     const commits = commitsResponse
 
-    const locComputation = contributorStats.status
-    const locIsReady = locComputation === 'ready'
-    const locAdditions = locIsReady ? contributorStats.additions : 0
-    const locDeletions = locIsReady ? contributorStats.deletions : 0
+    let locComputation = contributorStats.status
+    let locAdditions = contributorStats.status === 'ready' ? contributorStats.additions : 0
+    let locDeletions = contributorStats.status === 'ready' ? contributorStats.deletions : 0
+    let locAttempts = contributorStats.attempts
+    let locMessage = contributorStats.message || null
+
+    if (contributorStats.status !== 'ready') {
+      const codeFrequencyStats = await fetchRepoCodeFrequencyWithRetry(octokit, owner, repo)
+      if (codeFrequencyStats.status === 'ready') {
+        locComputation = 'ready'
+        locAdditions = codeFrequencyStats.additions
+        locDeletions = codeFrequencyStats.deletions
+        locAttempts = contributorStats.attempts + codeFrequencyStats.attempts
+        locMessage = 'Using repository-level code frequency fallback because contributor stats were not ready.'
+      } else {
+        locAttempts = contributorStats.attempts + codeFrequencyStats.attempts
+        if (locMessage && codeFrequencyStats.message) {
+          locMessage = `${locMessage} Fallback also failed: ${codeFrequencyStats.message}`
+        } else if (codeFrequencyStats.message) {
+          locMessage = codeFrequencyStats.message
+        }
+      }
+    }
 
     // Parse README
     let readmeContent = null
@@ -247,8 +354,8 @@ export async function POST(request: NextRequest) {
       deletions: locDeletions,
       net: locAdditions - locDeletions,
       locComputation,
-      locAttempts: contributorStats.attempts,
-      locMessage: contributorStats.message || null,
+      locAttempts,
+      locMessage,
       languages: languages.data,
       readme: readmeContent,
       commitMessages: commits.slice(0, 20).map(c => c.commit.message),

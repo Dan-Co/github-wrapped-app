@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
+import type { CSSProperties } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { gsap } from 'gsap'
 import type { AnalyzedRepository, DevelopmentMode, RepoPreference, CustomGroup } from '@/types'
 import {
   loadPreferences,
@@ -100,9 +102,77 @@ function getHeatLevel(count: number): string {
   return styles.level4
 }
 
+const LANGUAGE_ACCENTS: Record<string, string> = {
+  typescript: '#3178c6',
+  javascript: '#f7df1e',
+  python: '#3572a5',
+  css: '#563d7c',
+  html: '#e34c26',
+  go: '#00add8',
+  rust: '#dea584',
+  java: '#b07219',
+}
+
+function getLanguageAccent(language?: string | null): string {
+  if (!language) return '#00fff9'
+  return LANGUAGE_ACCENTS[language.toLowerCase()] || '#00b8ff'
+}
+
+function formatAnimatedNumber(value: number, decimals = 0): string {
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+function AnimatedNumber({
+  value,
+  prefix = '',
+  suffix = '',
+  decimals = 0,
+  className,
+}: {
+  value: number
+  prefix?: string
+  suffix?: string
+  decimals?: number
+  className?: string
+}) {
+  const ref = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    if (!ref.current) return
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReducedMotion) {
+      ref.current.textContent = `${prefix}${formatAnimatedNumber(value, decimals)}${suffix}`
+      return
+    }
+
+    const state = { value: 0 }
+    const tween = gsap.to(state, {
+      value,
+      duration: 1.25,
+      ease: 'power3.out',
+      onUpdate: () => {
+        if (ref.current) {
+          ref.current.textContent = `${prefix}${formatAnimatedNumber(state.value, decimals)}${suffix}`
+        }
+      },
+    })
+
+    return () => {
+      tween.kill()
+    }
+  }, [decimals, prefix, suffix, value])
+
+  return <span ref={ref} className={className}>{prefix}{formatAnimatedNumber(value, decimals)}{suffix}</span>
+}
+
 export default function WrappedPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const pageRef = useRef<HTMLElement>(null)
   const [repositories, setRepositories] = useState<AnalyzedRepository[]>([])
   const [repositoryGroups, setRepositoryGroups] = useState<RepositoryGroup[]>([])
   const [featuredProjects, setFeaturedProjects] = useState<FeaturedProject[]>([])
@@ -145,6 +215,23 @@ export default function WrappedPage() {
   
   // API Key modal state
   const [showApiKeyModal, setShowApiKeyModal] = useState(false)
+
+  useEffect(() => {
+    if (isLoading || !pageRef.current) return
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReducedMotion) return
+
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        '[data-animate="card"]',
+        { autoAlpha: 0, y: 28, scale: 0.98 },
+        { autoAlpha: 1, y: 0, scale: 1, duration: 0.65, stagger: 0.06, ease: 'power3.out' }
+      )
+    }, pageRef)
+
+    return () => ctx.revert()
+  }, [activeTab, isLoading])
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -406,6 +493,26 @@ export default function WrappedPage() {
     ([, a], [, b]) => b - a
   )[0]?.[0] || 'Unknown'
 
+  const locQuality = useMemo(() => {
+    const reposWithStats = repositories.filter(repo => repo.stats)
+    const ready = reposWithStats.filter(repo => repo.stats?.locComputation === 'ready').length
+    const pending = reposWithStats.filter(repo => repo.stats?.locComputation === 'pending').length
+    const unavailable = reposWithStats.filter(repo => repo.stats?.locComputation === 'unavailable').length
+    const error = reposWithStats.filter(repo => repo.stats?.locComputation === 'error').length
+    const unknown = reposWithStats.filter(repo => !repo.stats?.locComputation).length
+    const total = reposWithStats.length
+
+    return {
+      total,
+      ready,
+      pending,
+      unavailable,
+      error,
+      unknown,
+      coverage: total > 0 ? Math.round((ready / total) * 100) : 0,
+    }
+  }, [repositories])
+
   // Calculate impact metrics
   const impactMetrics = useMemo(() => {
     const avgCommitsPerRepo = repositories.length > 0 
@@ -520,6 +627,81 @@ export default function WrappedPage() {
       topManualLanguage,
     }
   }, [repositories, stats, repoPreferences, developmentMode])
+
+  const displayAchievements = useMemo<Achievement[]>(() => {
+    const generated: Achievement[] = []
+
+    if (impactMetrics.totalProjects >= 20) {
+      generated.push({
+        icon: '🌌',
+        title: 'Repo Universe Builder',
+        description: `You carried ${impactMetrics.totalProjects} projects through the year.`,
+      })
+    }
+
+    if (Object.keys(stats.languages).length >= 5) {
+      generated.push({
+        icon: '🧬',
+        title: 'Polyglot Energy',
+        description: `${Object.keys(stats.languages).length} languages showed up in your work.`,
+      })
+    }
+
+    if (locQuality.coverage >= 90 && locQuality.total > 0) {
+      generated.push({
+        icon: '🛰️',
+        title: 'High Signal Scan',
+        description: `${locQuality.coverage}% of repository LOC data is verified and ready.`,
+      })
+    }
+
+    if (impactMetrics.selfReportedAiPercentage >= 50) {
+      generated.push({
+        icon: '🤖',
+        title: 'AI-Accelerated Builder',
+        description: `${impactMetrics.selfReportedAiPercentage}% of your repos were marked AI-assisted.`,
+      })
+    }
+
+    if (impactMetrics.deployedRepos > 0) {
+      generated.push({
+        icon: '🚀',
+        title: 'Shipped To The World',
+        description: `${impactMetrics.deployedRepos} repositories have deployment links attached.`,
+      })
+    }
+
+    return [...achievements, ...generated].slice(0, 8)
+  }, [achievements, impactMetrics, locQuality, stats.languages])
+
+  const repoUniverse = useMemo(() => {
+    const repos = [...repositories]
+      .filter(repo => repo.stats)
+      .sort((a, b) => (b.stats?.commits || 0) - (a.stats?.commits || 0))
+      .slice(0, 24)
+
+    const maxCommits = Math.max(1, ...repos.map(repo => repo.stats?.commits || 0))
+    const orbitCount = Math.max(1, repos.length)
+
+    return repos.map((repo, index) => {
+      const commits = repo.stats?.commits || 0
+      const angle = (index / orbitCount) * Math.PI * 2 - Math.PI / 2
+      const ring = index % 3
+      const radius = 28 + ring * 11 + (index % 2) * 5
+      const x = 50 + Math.cos(angle) * radius
+      const y = 50 + Math.sin(angle) * radius
+      const size = 18 + Math.round((commits / maxCommits) * 44)
+
+      return {
+        repo,
+        x: Math.max(8, Math.min(92, x)),
+        y: Math.max(8, Math.min(92, y)),
+        size,
+        color: getLanguageAccent(repo.language),
+        isAi: isRepoAiAssisted(repo.name),
+      }
+    })
+  }, [repositories, repoPreferences, developmentMode])
 
   // Get language-specific bar class
   const getLanguageClass = (lang: string): string => {
@@ -637,6 +819,12 @@ export default function WrappedPage() {
             Repositories
           </button>
           <button
+            className={`${styles.navTab} ${activeTab === 'universe' ? styles.active : ''}`}
+            onClick={() => setActiveTab('universe')}
+          >
+            Universe
+          </button>
+          <button
             className={`${styles.navTab} ${activeTab === 'export' ? styles.active : ''}`}
             onClick={() => setActiveTab('export')}
           >
@@ -679,52 +867,89 @@ export default function WrappedPage() {
         </div>
       </nav>
 
-      <main className={styles.main}>
+      <main ref={pageRef} className={styles.main}>
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className={styles.section}>
+            <section className={styles.cinematicHero} data-animate="card">
+              <div className={styles.cinematicEyebrow}>Developer Observatory</div>
+              <h1>Your code year, mapped like a living system.</h1>
+              <p>
+                Every project becomes a signal: velocity, language energy, confidence, and the work that actually shipped.
+              </p>
+              <div className={styles.heroSignalRow}>
+                <span>{repositories.length} repos scanned</span>
+                <span>{primaryLanguage} dominant language</span>
+                <span>{locQuality.coverage}% LOC confidence</span>
+              </div>
+            </section>
+
             {/* Hero Stats - Larger cards */}
             <div className={styles.heroGrid}>
-              <div className={`glass-card ${styles.heroCard} ${styles.reveal}`}>
+              <div className={`glass-card ${styles.heroCard} ${styles.reveal}`} data-animate="card">
                 <div className={styles.label}>Total Commits</div>
                 <div className={`${styles.bigNumber} ${styles.mega}`}>
-                  {stats.totalCommits.toLocaleString()}
+                  <AnimatedNumber value={stats.totalCommits} />
                 </div>
                 <div className={styles.heroTitle}>commits across {repositories.length} repositories</div>
               </div>
 
-              <div className={`glass-card ${styles.heroCard} ${styles.reveal} ${styles.delay1}`}>
+              <div className={`glass-card ${styles.heroCard} ${styles.reveal} ${styles.delay1}`} data-animate="card">
                 <div className={styles.label}>Lines of Code (Net)</div>
                 <div className={`${styles.bigNumber} ${styles.mega}`}>
-                  {stats.totalNet.toLocaleString()}
+                  <AnimatedNumber value={stats.totalNet} />
                 </div>
-                <div className={styles.heroTitle}>net lines added to your projects</div>
+                <div className={styles.heroTitle}>net lines from repos with ready GitHub stats</div>
               </div>
             </div>
 
             <div className={styles.statsGrid}>
-              <div className={`glass-card ${styles.reveal} ${styles.delay2}`}>
+              <div className={`glass-card ${styles.reveal} ${styles.delay2}`} data-animate="card">
                 <div className={styles.label}>Lines Added</div>
                 <div className={`${styles.monoValue} ${styles.green}`}>
-                  +{stats.totalAdditions.toLocaleString()}
+                  <AnimatedNumber value={stats.totalAdditions} prefix="+" />
                 </div>
               </div>
 
-              <div className={`glass-card ${styles.reveal} ${styles.delay3}`}>
+              <div className={`glass-card ${styles.reveal} ${styles.delay3}`} data-animate="card">
                 <div className={styles.label}>Lines Deleted</div>
                 <div className={`${styles.monoValue} ${styles.red}`}>
-                  -{stats.totalDeletions.toLocaleString()}
+                  <AnimatedNumber value={stats.totalDeletions} prefix="-" />
                 </div>
               </div>
 
-              <div className={`glass-card ${styles.reveal} ${styles.delay4}`}>
+              <div className={`glass-card ${styles.reveal} ${styles.delay4}`} data-animate="card">
                 <div className={styles.label}>Primary Language</div>
                 <div className={`${styles.monoValue} ${styles.small}`}>{primaryLanguage}</div>
               </div>
 
-              <div className={`glass-card ${styles.reveal} ${styles.delay5}`}>
+              <div className={`glass-card ${styles.reveal} ${styles.delay5}`} data-animate="card">
                 <div className={styles.label}>Languages Used</div>
-                <div className={styles.monoValue}>{Object.keys(stats.languages).length}</div>
+                <div className={styles.monoValue}>
+                  <AnimatedNumber value={Object.keys(stats.languages).length} />
+                </div>
+              </div>
+            </div>
+
+            <div className={`${styles.signalPanel} glass-card`} data-animate="card">
+              <div>
+                <div className={styles.label}>Data Confidence</div>
+                <h2>{locQuality.coverage}% LOC coverage</h2>
+                <p>
+                  {locQuality.ready} of {locQuality.total} repositories have ready LOC stats. Pending or unavailable repos are excluded from LOC totals instead of being counted as zero.
+                </p>
+              </div>
+              <div className={styles.confidenceMeter} aria-label={`${locQuality.coverage}% LOC coverage`}>
+                <div className={styles.confidenceRing} style={{ '--coverage': `${locQuality.coverage * 3.6}deg` } as CSSProperties}>
+                  <span>{locQuality.coverage}%</span>
+                </div>
+              </div>
+              <div className={styles.signalChips}>
+                <span className={styles.readyChip}>{locQuality.ready} ready</span>
+                {locQuality.pending > 0 && <span className={styles.pendingChip}>{locQuality.pending} pending</span>}
+                {locQuality.unavailable > 0 && <span className={styles.mutedChip}>{locQuality.unavailable} unavailable</span>}
+                {locQuality.error > 0 && <span className={styles.errorChip}>{locQuality.error} error</span>}
+                {locQuality.unknown > 0 && <span className={styles.mutedChip}>{locQuality.unknown} legacy</span>}
               </div>
             </div>
 
@@ -1017,12 +1242,12 @@ export default function WrappedPage() {
             </div>
 
             {/* Achievements Section */}
-            {achievements.length > 0 && (
+            {displayAchievements.length > 0 && (
               <div className={`glass-card ${styles.reveal} ${styles.delay5}`} style={{ marginBottom: '32px' }}>
                 <h2 className={styles.sectionTitle}>🏆 Key Achievements</h2>
                 <div className={styles.achievementsGrid}>
-                  {achievements.map((achievement, index) => (
-                    <div key={index} className={styles.achievementCard}>
+                  {displayAchievements.map((achievement, index) => (
+                    <div key={`${achievement.title}-${index}`} className={styles.achievementCard} data-animate="card">
                       <div className={styles.achievementIcon}>{achievement.icon}</div>
                       <div className={styles.achievementTitle}>{achievement.title}</div>
                       <div className={styles.achievementDescription}>{achievement.description}</div>
@@ -1171,8 +1396,17 @@ export default function WrappedPage() {
                           key={repo.id}
                           className={`glass-card ${styles.repoCard}`}
                           onClick={() => setSelectedRepo(repo)}
+                          data-animate="card"
+                          style={{ '--repo-accent': getLanguageAccent(repo.language) } as CSSProperties}
                         >
-                          <h3 className={styles.repoName}>{repo.name}</h3>
+                          <div className={styles.repoCardTopline}>
+                            <h3 className={styles.repoName}>{repo.name}</h3>
+                            {repo.stats?.locComputation && (
+                              <span className={`${styles.locBadge} ${styles[`loc${repo.stats.locComputation}`] || styles.locunknown}`}>
+                                {repo.stats.locComputation}
+                              </span>
+                            )}
+                          </div>
                           {repo.language && (
                             <span className={styles.repoLanguage}>{repo.language}</span>
                           )}
@@ -1224,8 +1458,17 @@ export default function WrappedPage() {
                     key={repo.id}
                     className={`glass-card ${styles.repoCard}`}
                     onClick={() => setSelectedRepo(repo)}
+                    data-animate="card"
+                    style={{ '--repo-accent': getLanguageAccent(repo.language) } as CSSProperties}
                   >
-                    <h3 className={styles.repoName}>{repo.name}</h3>
+                    <div className={styles.repoCardTopline}>
+                      <h3 className={styles.repoName}>{repo.name}</h3>
+                      {repo.stats?.locComputation && (
+                        <span className={`${styles.locBadge} ${styles[`loc${repo.stats.locComputation}`] || styles.locunknown}`}>
+                          {repo.stats.locComputation}
+                        </span>
+                      )}
+                    </div>
                     {repo.language && (
                       <span className={styles.repoLanguage}>{repo.language}</span>
                     )}
@@ -1267,6 +1510,75 @@ export default function WrappedPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Universe Tab */}
+        {activeTab === 'universe' && (
+          <div className={styles.section}>
+            <div className={styles.universeHeader} data-animate="card">
+              <div>
+                <div className={styles.cinematicEyebrow}>Repository Universe</div>
+                <h2>Your projects as an interactive constellation</h2>
+                <p>
+                  Planet size follows commit volume, color follows primary language, and rings show your AI/manual development mode.
+                </p>
+              </div>
+              <div className={styles.universeLegend}>
+                <span><i className={styles.aiLegendDot}></i> AI-assisted ring</span>
+                <span><i className={styles.manualLegendDot}></i> Manual ring</span>
+              </div>
+            </div>
+
+            <div className={`${styles.universeStage} glass-card`} data-animate="card">
+              <div className={`${styles.orbit} ${styles.orbitOne}`}></div>
+              <div className={`${styles.orbit} ${styles.orbitTwo}`}></div>
+              <div className={`${styles.orbit} ${styles.orbitThree}`}></div>
+              <div className={styles.universeCore}>
+                <span>{repositories.length}</span>
+                <small>repos</small>
+              </div>
+              {repoUniverse.map(({ repo, x, y, size, color, isAi }) => (
+                <button
+                  key={repo.id}
+                  className={`${styles.repoPlanet} ${isAi ? styles.aiPlanet : styles.manualPlanet}`}
+                  style={{
+                    left: `${x}%`,
+                    top: `${y}%`,
+                    width: `${size}px`,
+                    height: `${size}px`,
+                    '--planet-color': color,
+                  } as CSSProperties}
+                  onClick={() => setSelectedRepo(repo)}
+                  title={`${repo.name}: ${repo.stats?.commits || 0} commits`}
+                >
+                  <span>{repo.name.slice(0, 2).toUpperCase()}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className={styles.universeCards}>
+              {repoUniverse.slice(0, 6).map(({ repo, color, isAi }) => (
+                <button
+                  key={repo.id}
+                  className={`${styles.universeRepoCard} glass-card`}
+                  onClick={() => setSelectedRepo(repo)}
+                  data-animate="card"
+                  style={{ '--planet-color': color } as CSSProperties}
+                >
+                  <div className={styles.universeRepoTopline}>
+                    <span>{isAi ? '🤖 AI-assisted' : '👤 Manual'}</span>
+                    <span>{repo.language || 'Unknown'}</span>
+                  </div>
+                  <h3>{repo.name}</h3>
+                  <p>{repo.aiSummary?.project_function || repo.description || 'A signal in your GitHub universe.'}</p>
+                  <div className={styles.universeRepoStats}>
+                    <span>{repo.stats?.commits || 0} commits</span>
+                    <span>{repo.stats?.locComputation === 'ready' ? 'LOC ready' : repo.stats?.locComputation || 'stats loaded'}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
