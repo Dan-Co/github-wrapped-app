@@ -306,6 +306,12 @@ export default function WrappedPage() {
           repo: repo.name,
         }),
       })
+
+      if (!statsRes.ok) {
+        const errorPayload = await statsRes.json().catch(() => ({}))
+        throw new Error(errorPayload.error || `Failed to fetch stats (${statsRes.status})`)
+      }
+
       const stats = await statsRes.json()
 
       // Get narrative from preferences
@@ -335,6 +341,11 @@ export default function WrappedPage() {
           setShowApiKeyModal(true)
           return
         }
+      }
+
+      if (!analyzeRes.ok) {
+        const errorPayload = await analyzeRes.json().catch(() => ({}))
+        throw new Error(errorPayload.error || `Failed to generate AI summary (${analyzeRes.status})`)
       }
       
       const { summary } = await analyzeRes.json()
@@ -367,9 +378,13 @@ export default function WrappedPage() {
     (acc, repo) => {
       if (repo.stats) {
         acc.totalCommits += repo.stats.commits || 0
-        acc.totalAdditions += repo.stats.additions || 0
-        acc.totalDeletions += repo.stats.deletions || 0
-        acc.totalNet += repo.stats.net || 0
+
+        // Only include LOC when GitHub contributor stats are fully ready.
+        if (repo.stats.locComputation === 'ready') {
+          acc.totalAdditions += repo.stats.additions || 0
+          acc.totalDeletions += repo.stats.deletions || 0
+          acc.totalNet += repo.stats.net || 0
+        }
         
         Object.entries(repo.stats.languages || {}).forEach(([lang, bytes]) => {
           acc.languages[lang] = (acc.languages[lang] || 0) + bytes

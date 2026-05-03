@@ -5,15 +5,24 @@ import { Octokit } from '@octokit/rest'
 
 export const dynamic = 'force-dynamic'
 
+type ContributorStatsResult = {
+  additions: number
+  deletions: number
+  status: 'ready' | 'pending' | 'unavailable' | 'error'
+  attempts: number
+  message?: string
+}
+
 // Helper to fetch contributor stats with polling for 202 responses
 // GitHub returns 202 while computing stats - we need to poll until we get actual data
 async function fetchContributorStatsWithRetry(
   octokit: Octokit,
   owner: string,
   repo: string,
+  userLogin: string,
   maxRetries = 5,
   delayMs = 1000
-): Promise<{ additions: number; deletions: number }> {
+): Promise<ContributorStatsResult> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await octokit.repos.getContributorsStats({ owner, repo })
@@ -21,11 +30,17 @@ async function fetchContributorStatsWithRetry(
       // 202 means GitHub is computing stats - retry after delay
       if (response.status === 202) {
         if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, delayMs))
+          const backoffMs = delayMs * (attempt + 1)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
           continue
         }
-        // Final attempt still 202 - return zeros
-        return { additions: 0, deletions: 0 }
+        return {
+          additions: 0,
+          deletions: 0,
+          status: 'pending',
+          attempts: attempt + 1,
+          message: 'GitHub is still computing contributor stats for this repository.',
+        }
       }
       
       // Calculate totals from response
@@ -33,12 +48,21 @@ async function fetchContributorStatsWithRetry(
       let totalDeletions = 0
       
       if (Array.isArray(response.data) && response.data.length > 0) {
-        for (const contributor of response.data) {
-          if (contributor.weeks) {
-            for (const week of contributor.weeks) {
-              totalAdditions += week.a || 0
-              totalDeletions += week.d || 0
-            }
+        const userStats = response.data.find(c => c.author?.login?.toLowerCase() === userLogin.toLowerCase())
+
+        // Use per-user LOC when possible so totals represent the authenticated user's work.
+        if (userStats?.weeks) {
+          for (const week of userStats.weeks) {
+            totalAdditions += week.a || 0
+            totalDeletions += week.d || 0
+          }
+        } else {
+          return {
+            additions: 0,
+            deletions: 0,
+            status: 'unavailable',
+            attempts: attempt + 1,
+            message: 'No contributor stats were attributed to your GitHub login for this repository.',
           }
         }
         
@@ -48,27 +72,55 @@ async function fetchContributorStatsWithRetry(
           // Check if it's genuinely empty or just not computed
           const hasAnyWeeks = response.data.some(c => c.weeks && c.weeks.length > 0)
           if (!hasAnyWeeks) {
-            await new Promise(resolve => setTimeout(resolve, delayMs))
+            const backoffMs = delayMs * (attempt + 1)
+            await new Promise(resolve => setTimeout(resolve, backoffMs))
             continue
           }
         }
       } else if (attempt < maxRetries - 1) {
         // Empty array - might still be computing
-        await new Promise(resolve => setTimeout(resolve, delayMs))
+        const backoffMs = delayMs * (attempt + 1)
+        await new Promise(resolve => setTimeout(resolve, backoffMs))
         continue
+      } else {
+        return {
+          additions: 0,
+          deletions: 0,
+          status: 'unavailable',
+          attempts: attempt + 1,
+          message: 'GitHub returned no contributor stats for this repository.',
+        }
       }
       
-      return { additions: totalAdditions, deletions: totalDeletions }
+      return {
+        additions: totalAdditions,
+        deletions: totalDeletions,
+        status: 'ready',
+        attempts: attempt + 1,
+      }
     } catch (error) {
       if (attempt < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs))
+        const backoffMs = delayMs * (attempt + 1)
+        await new Promise(resolve => setTimeout(resolve, backoffMs))
         continue
       }
-      return { additions: 0, deletions: 0 }
+      return {
+        additions: 0,
+        deletions: 0,
+        status: 'error',
+        attempts: attempt + 1,
+        message: 'Failed to fetch contributor stats after retries.',
+      }
     }
   }
   
-  return { additions: 0, deletions: 0 }
+  return {
+    additions: 0,
+    deletions: 0,
+    status: 'error',
+    attempts: maxRetries,
+    message: 'Failed to fetch contributor stats.',
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -90,6 +142,11 @@ export async function POST(request: NextRequest) {
       auth: session.accessToken,
     })
 
+    const userLogin = session.user?.login
+    if (!userLogin) {
+      return NextResponse.json({ error: 'Missing authenticated GitHub login' }, { status: 400 })
+    }
+
     // Fetch all data in parallel for efficiency
     const [commitsResponse, contributorStats, languages, readmeResult, repoInfo] = await Promise.all([
       // Get commits (just for count and messages - single paginated call)
@@ -100,7 +157,7 @@ export async function POST(request: NextRequest) {
       }),
       
       // Get contributor stats with retry logic for 202 responses
-      fetchContributorStatsWithRetry(octokit, owner, repo),
+      fetchContributorStatsWithRetry(octokit, owner, repo, userLogin),
       
       // Get languages
       octokit.repos.listLanguages({ owner, repo }),
@@ -113,6 +170,11 @@ export async function POST(request: NextRequest) {
     ])
 
     const commits = commitsResponse
+
+    const locComputation = contributorStats.status
+    const locIsReady = locComputation === 'ready'
+    const locAdditions = locIsReady ? contributorStats.additions : 0
+    const locDeletions = locIsReady ? contributorStats.deletions : 0
 
     // Parse README
     let readmeContent = null
@@ -181,9 +243,12 @@ export async function POST(request: NextRequest) {
 
     const stats = {
       commits: commits.length,
-      additions: contributorStats.additions,
-      deletions: contributorStats.deletions,
-      net: contributorStats.additions - contributorStats.deletions,
+      additions: locAdditions,
+      deletions: locDeletions,
+      net: locAdditions - locDeletions,
+      locComputation,
+      locAttempts: contributorStats.attempts,
+      locMessage: contributorStats.message || null,
       languages: languages.data,
       readme: readmeContent,
       commitMessages: commits.slice(0, 20).map(c => c.commit.message),

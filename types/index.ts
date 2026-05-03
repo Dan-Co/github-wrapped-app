@@ -23,6 +23,9 @@ export interface RepositoryStats {
   additions: number
   deletions: number
   net: number
+  locComputation?: 'ready' | 'pending' | 'unavailable' | 'error'
+  locAttempts?: number
+  locMessage?: string | null
   languages: Record<string, number>
   readme: string | null
   commitMessages: string[]
